@@ -1,0 +1,231 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'panel/**'
+      - 'docker/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: panel/package-lock.json
+
+    - name: Install sshpass
+      run: sudo apt-get update && sudo apt-get install -y sshpass
+
+    - name: Test SSH Connection
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "echo 'SSH connection successful'"
+
+    - name: Install Docker on VPS (if needed)
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          if ! command -v docker &> /dev/null; then
+            echo 'Installing Docker...'
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sh get-docker.sh
+            systemctl start docker
+            systemctl enable docker
+          else
+            echo 'Docker already installed'
+          fi
+        "
+
+    - name: Install Node.js on VPS (if needed)
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          if ! command -v node &> /dev/null; then
+            echo 'Installing Node.js...'
+            curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+            apt-get install -y nodejs
+          else
+            echo 'Node.js already installed: $(node --version)'
+          fi
+        "
+
+    - name: Create application directory
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          mkdir -p /opt/supabase-manager
+          mkdir -p /opt/supabase-manager/panel
+          mkdir -p /opt/supabase-manager/docker
+        "
+
+    - name: Copy docker files to VPS
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" scp -o StrictHostKeyChecking=no -r docker/* root@82.25.69.57:/opt/supabase-manager/docker/
+
+    - name: Copy panel files to VPS
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" scp -o StrictHostKeyChecking=no -r panel/* root@82.25.69.57:/opt/supabase-manager/panel/
+
+    - name: Install panel dependencies on VPS
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          cd /opt/supabase-manager/panel
+          npm install --production
+        "
+
+    - name: Create systemd service
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          cat > /etc/systemd/system/supabase-manager.service << 'EOF'
+        [Unit]
+        Description=Supabase Manager Panel
+        After=network.target
+        
+        [Service]
+        Type=simple
+        User=root
+        WorkingDirectory=/opt/supabase-manager/panel
+        ExecStart=/usr/bin/node server.js
+        Restart=always
+        RestartSec=3
+        Environment=NODE_ENV=production
+        Environment=VPS_IP=82.25.69.57
+        Environment=PORT=3030
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        "
+
+    - name: Configure nginx (if needed)
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          if ! command -v nginx &> /dev/null; then
+            echo 'Installing nginx...'
+            apt-get update
+            apt-get install -y nginx
+          fi
+          
+          # Create nginx config for Supabase Manager
+          cat > /etc/nginx/sites-available/supabase-manager << 'EOF'
+        server {
+            listen 80;
+            server_name 82.25.69.57;
+            
+            # Supabase Manager Panel
+            location / {
+                proxy_pass http://localhost:3030;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto \$scheme;
+                proxy_cache_bypass \$http_upgrade;
+            }
+            
+            # Proxy para instâncias Supabase (portas 8010-8099)
+            location ~ ^/instance-(\d+)/(.*) {
+                set \$port \$1;
+                proxy_pass http://localhost:\$port/\$2;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto \$scheme;
+                proxy_cache_bypass \$http_upgrade;
+            }
+        }
+        EOF
+          
+          # Enable site
+          ln -sf /etc/nginx/sites-available/supabase-manager /etc/nginx/sites-enabled/
+          nginx -t && systemctl reload nginx
+          systemctl enable nginx
+        "
+
+    - name: Configure firewall
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          # Allow HTTP, HTTPS, SSH
+          ufw allow 22/tcp
+          ufw allow 80/tcp
+          ufw allow 443/tcp
+          
+          # Allow Supabase Manager
+          ufw allow 3030/tcp
+          
+          # Allow Supabase instances (Kong HTTP)
+          ufw allow 8010:8099/tcp
+          
+          # Allow Supabase instances (Kong HTTPS)
+          ufw allow 8410:8499/tcp
+          
+          # Allow PostgreSQL external access
+          ufw allow 5410:5499/tcp
+          
+          # Allow Analytics
+          ufw allow 4010:4099/tcp
+          
+          # Enable firewall (be careful!)
+          echo 'y' | ufw enable || true
+        "
+
+    - name: Start/Restart services
+      run: |
+        sshpass -p "${{ secrets.VPS_PASSWORD }}" ssh -o StrictHostKeyChecking=no root@82.25.69.57 "
+          # Reload systemd and start service
+          systemctl daemon-reload
+          systemctl enable supabase-manager
+          systemctl restart supabase-manager
+          
+          # Check service status
+          sleep 5
+          systemctl status supabase-manager --no-pager
+          
+          # Check if service is running
+          if systemctl is-active --quiet supabase-manager; then
+            echo '✅ Supabase Manager deployed successfully!'
+            echo '🌐 Access: http://82.25.69.57'
+            echo '🎛️  Panel: http://82.25.69.57:3030'
+          else
+            echo '❌ Service failed to start'
+            systemctl status supabase-manager --no-pager
+            exit 1
+          fi
+        "
+
+    - name: Show deployment info
+      run: |
+        echo "===========================================" 
+        echo "🚀 DEPLOYMENT COMPLETED SUCCESSFULLY!"
+        echo "==========================================="
+        echo ""
+        echo "📱 Supabase Manager Panel:"
+        echo "   http://82.25.69.57"
+        echo "   http://82.25.69.57:3030"
+        echo ""
+        echo "🔧 SSH Access:"
+        echo "   ssh root@82.25.69.57"
+        echo ""
+        echo "📁 Application Path:"
+        echo "   /opt/supabase-manager/"
+        echo ""
+        echo "🔄 Service Commands:"
+        echo "   systemctl status supabase-manager"
+        echo "   systemctl restart supabase-manager"
+        echo "   systemctl logs -f supabase-manager"
+        echo ""
+        echo "📊 Logs:"
+        echo "   journalctl -u supabase-manager -f"
+        echo "==========================================="

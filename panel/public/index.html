@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #111111;
+            border-bottom: 1px solid #1f1f1f;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            background: #3ecf8e;
+            border-radius: 4px;
+        }
+
+        .logo-text {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .main-content {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .actions-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .new-project-btn {
+            background: #3ecf8e;
+            color: #000;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .new-project-btn:hover {
+            background: #2fb074;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .project-card {
+            background: #111111;
+            border: 1px solid #1f1f1f;
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: border-color 0.2s;
+        }
+
+        .project-card:hover {
+            border-color: #3ecf8e;
+        }
+
+        .project-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-running { background: #3ecf8e; }
+        .status-stopped { background: #ff6b6b; }
+        .status-creating { background: #ffd93d; }
+        .status-error { background: #ff4757; }
+
+        .project-name {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .project-url {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 1rem;
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid #333;
+            background: transparent;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            border-color: #3ecf8e;
+            color: #3ecf8e;
+        }
+
+        .btn-primary {
+            background: #3ecf8e;
+            color: #000;
+            border-color: #3ecf8e;
+        }
+
+        .btn-primary:hover {
+            background: #2fb074;
+        }
+
+        .btn-danger {
+            border-color: #ff4757;
+            color: #ff4757;
+        }
+
+        .btn-danger:hover {
+            background: #ff4757;
+            color: #fff;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #111111;
+            padding: 2rem;
+            border-radius: 8px;
+            border: 1px solid #1f1f1f;
+            min-width: 400px;
+        }
+
+        .modal-header {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem;
+            background: #000;
+            border: 1px solid #333;
+            color: #fff;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #3ecf8e;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: end;
+            margin-top: 1.5rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #666;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 1rem;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #333;
+            border-radius: 50%;
+            border-top-color: #3ecf8e;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon"></div>
+            <span class="logo-text">Supabase Manager</span>
+        </div>
+        <div>
+            <span id="instanceCount">0 projetos</span>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="actions-bar">
+            <h1>Seus projetos</h1>
+            <button class="new-project-btn" onclick="openCreateModal()">
+                + Novo projeto
+            </button>
+        </div>
+
+        <div id="projectsContainer" class="projects-grid">
+            <div class="loading" style="margin: 2rem auto;"></div>
+        </div>
+    </main>
+
+    <!-- Modal Criar Projeto -->
+    <div id="createModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Criar novo projeto</div>
+            <form id="createForm">
+                <div class="form-group">
+                    <label class="form-label">Nome do projeto</label>
+                    <input type="text" id="projectName" class="form-input" placeholder="Meu App" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Região</label>
+                    <input type="text" class="form-input" value="VPS Local" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Database</label>
+                    <input type="text" class="form-input" value="PostgreSQL 15" readonly>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" onclick="closeCreateModal()" class="btn">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Criar projeto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let instances = [];
+
+        // Carregar instâncias
+        async function loadInstances() {
+            try {
+                const response = await fetch('/api/instances');
+                const data = await response.json();
+                instances = data.instances;
+                renderProjects();
+                updateInstanceCount();
+            } catch (error) {
+                console.error('Erro ao carregar instâncias:', error);
+            }
+        }
+
+        // Renderizar projetos
+        function renderProjects() {
+            const container = document.getElementById('projectsContainer');
+            
+            if (instances.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Nenhum projeto ainda</h3>
+                        <p>Crie seu primeiro projeto Supabase clicando em "Novo projeto"</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = instances.map(instance => `
+                <div class="project-card">
+                    <div class="project-status">
+                        <div class="status-dot status-${instance.status}"></div>
+                        <span>${getStatusText(instance.status)}</span>
+                    </div>
+                    <div class="project-name">${instance.name}</div>
+                    <div class="project-url">:${instance.ports.kong_http}</div>
+                    <div class="project-actions">
+                        <button class="btn btn-primary" onclick="openStudio('${instance.id}')" 
+                                ${instance.status !== 'running' ? 'disabled' : ''}>
+                            Abrir Studio
+                        </button>
+                        ${instance.status === 'running' ? 
+                            `<button class="btn" onclick="stopInstance('${instance.id}')">Parar</button>` :
+                            `<button class="btn" onclick="startInstance('${instance.id}')">Iniciar</button>`
+                        }
+                        <button class="btn btn-danger" onclick="deleteInstance('${instance.id}')">Deletar</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getStatusText(status) {
+            const statusMap = {
+                'running': 'Online',
+                'stopped': 'Parado',
+                'creating': 'Criando...',
+                'error': 'Erro'
+            };
+            return statusMap[status] || status;
+        }
+
+        function updateInstanceCount() {
+            document.getElementById('instanceCount').textContent = 
+                `${instances.length} projeto${instances.length !== 1 ? 's' : ''}`;
+        }
+
+        // Modal functions
+        function openCreateModal() {
+            document.getElementById('createModal').style.display = 'block';
+            document.getElementById('projectName').focus();
+        }
+
+        function closeCreateModal() {
+            document.getElementById('createModal').style.display = 'none';
+            document.getElementById('createForm').reset();
+        }
+
+        // Event handlers
+        document.getElementById('createForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById('projectName').value.trim();
+            if (!name) return;
+
+            try {
+                const response = await fetch('/api/instances', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    closeCreateModal();
+                    loadInstances(); // Recarregar lista
+                    alert('Projeto sendo criado! Aguarde alguns instantes...');
+                } else {
+                    alert('Erro: ' + result.error);
+                }
+            } catch (error) {
+                alert('Erro ao criar projeto: ' + error.message);
+            }
+        });
+
+        // Instance actions
+        async function startInstance(id) {
+            try {
+                const response = await fetch(`/api/instances/${id}/start`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    setTimeout(loadInstances, 2000); // Recarregar após 2s
+                } else {
+                    const result = await response.json();
+                    alert('Erro: ' + result.error);
+                }
+            } catch (error) {
+                alert('Erro ao iniciar instância: ' + error.message);
+            }
+        }
+
+        async function stopInstance(id) {
+            try {
+                const response = await fetch(`/api/instances/${id}/stop`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    setTimeout(loadInstances, 2000); // Recarregar após 2s
+                } else {
+                    const result = await response.json();
+                    alert('Erro: ' + result.error);
+                }
+            } catch (error) {
+                alert('Erro ao parar instância: ' + error.message);
+            }
+        }
+
+        async function deleteInstance(id) {
+            if (!confirm('Tem certeza que deseja deletar esta instância? Esta ação não pode ser desfeita.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/instances/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    loadInstances(); // Recarregar lista
+                } else {
+                    const result = await response.json();
+                    alert('Erro: ' + result.error);
+                }
+            } catch (error) {
+                alert('Erro ao deletar instância: ' + error.message);
+            }
+        }
+
+        function openStudio(id) {
+            const instance = instances.find(i => i.id === id);
+            if (instance && instance.urls.studio) {
+                window.open(instance.urls.studio, '_blank');
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('createModal').addEventListener('click', (e) => {
+            if (e.target.id === 'createModal') {
+                closeCreateModal();
+            }
+        });
+
+        // Auto-refresh instances every 30 seconds
+        setInterval(loadInstances, 30000);
+
+        // Initial load
+        loadInstances();
+    </script>
+</body>
+</html>
