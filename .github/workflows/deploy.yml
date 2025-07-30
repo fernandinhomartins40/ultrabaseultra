@@ -3,10 +3,6 @@ name: Deploy to VPS
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'panel/**'
-      - 'docker/**'
-      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 jobs:
